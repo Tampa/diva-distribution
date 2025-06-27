@@ -75,29 +75,92 @@ namespace Diva.Wifi.WifiScript
 
         public string Process(string html)
         {
-            string processedHtml = string.Empty;
-            MatchCollection matches = ssi.Matches(html);
-            //m_log.DebugFormat("Regex: {0}; matches = {1}", ssi.ToString(), matches.Count);
+            var output = new StringBuilder();
+            var stack = new Stack<(string content, int index, string fileName, List<object> dataList)>();
+            stack.Push((html, m_Index, m_FileName, m_ListOfObjects));
 
-            int lastindex = 0;
-            foreach (Match match in matches)
+            while (stack.Count > 0)
             {
-                //m_log.DebugFormat("Match {0}", match.Value);
-                string replacement = Process(match);
-                string before = html.Substring(lastindex, match.Index - lastindex);
-                string after = html.Substring(match.Index + match.Length);
+                var (currentHtml, currentIndex, currentFileName, currentDataList) = stack.Pop();
+                m_Index = currentIndex;
+                m_FileName = currentFileName;
+                m_ListOfObjects = currentDataList;
 
-                processedHtml = processedHtml + before + replacement;
-                lastindex = match.Index + match.Length;
-            }
-            if (matches.Count > 0)
-            {
-                string end = html.Substring(matches[matches.Count - 1].Index + matches[matches.Count - 1].Length);
-                processedHtml = processedHtml + end;
-                return processedHtml;
+                int lastIndex = 0;
+                var matches = ssi.Matches(currentHtml);
+
+                if (matches.Count == 0)
+                {
+                    output.Append(currentHtml);
+                    continue;
+                }
+
+                for (int i = 0; i < matches.Count; i++)
+                {
+                    var match = matches[i];
+                    output.Append(currentHtml.Substring(lastIndex, match.Index - lastIndex));
+                    lastIndex = match.Index + match.Length;
+
+                    string directive = match.Groups[1].Value;
+                    string argStr = match.Groups[2].Value;
+
+                    if (directive == "include")
+                    {
+                        var includeMatch = args.Match(argStr);
+                        if (includeMatch.Groups.Count == 3)
+                        {
+                            string path = m_WebApp.LocalizePath(m_Env, includeMatch.Groups[2].Value);
+
+                            if (File.Exists(path))
+                            {
+                                string includedContent = File.ReadAllText(path);
+
+                                if (path != m_FileName)
+                                {
+                                    var newList = currentDataList;
+                                    int newIndex = currentIndex;
+
+                                    if (newList != null && newIndex < newList.Count - 1)
+                                    {
+                                        newIndex++;
+                                        if (newList[newIndex] is List<object> nestedList)
+                                            newList = nestedList;
+                                    }
+
+                                    stack.Push((currentHtml.Substring(lastIndex), currentIndex, currentFileName, currentDataList));
+                                    stack.Push((includedContent, newIndex, path, newList));
+                                    break;
+                                }
+                                else
+                                {
+                                    m_Index++;
+                                    if (currentDataList != null && m_Index >= currentDataList.Count)
+                                        continue;
+
+                                    stack.Push((currentHtml.Substring(lastIndex), currentIndex, currentFileName, currentDataList));
+                                    stack.Push((includedContent, m_Index, path, currentDataList));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    else if (directive == "get")
+                    {
+                        output.Append(Get(argStr));
+                    }
+                    else if (directive == "call")
+                    {
+                        output.Append(Call(argStr));
+                    }
+                }
+
+                if (lastIndex < currentHtml.Length)
+                {
+                    output.Append(currentHtml.Substring(lastIndex));
+                }
             }
 
-            return html;
+            return output.ToString();
         }
 
         private string Process(Match match)
