@@ -61,76 +61,85 @@ namespace Diva.Wifi
                 return m_WebApp.ReadFile(env, "index.html");
             }
 
-
+            Regex reg = new Regex("^[a-zA-Z0-9]*$");
             m_log.DebugFormat("[Wifi]: NewAccountPostRequest");
             Request request = env.TheRequest;
 
-            if ((password != string.Empty) && (password == password2) && (first != string.Empty) && (last != string.Empty))
+            if (first.Length > 2 && last.Length > 2 && reg.Match(first).Success && reg.Match(last).Success)
             {
-                UserAccount account = m_UserAccountService.GetUserAccount(UUID.Zero, first, last);
-                if (account == null)
-                    account = m_UserAccountService.GetUserAccount(UUID.Zero, m_PendingIdentifier + first, last);
-                if (account == null)
+                if ((password != string.Empty) && (password == password2) && (first != string.Empty) && (last != string.Empty) && password.Length > 11)
                 {
-                    Dictionary<string, object> urls = new Dictionary<string, object>();
-
-                    if (m_WebApp.AccountConfirmationRequired)
+                    UserAccount account = m_UserAccountService.GetUserAccount(UUID.Zero, first, last);
+                    if (account == null)
+                        account = m_UserAccountService.GetUserAccount(UUID.Zero, m_PendingIdentifier + first, last);
+                    if (account == null)
                     {
-                        //attach pending identifier to first name
-                        first = m_PendingIdentifier + first;
-                        // Store the password temporarily here
-                        urls["Password"] = password;
-                        urls["Avatar"] = avatarType;
-                        if (env.LanguageInfo != null)
-                            urls["Language"] = Localization.LanguageInfoToString(env.LanguageInfo);
+                        Dictionary<string, object> urls = new Dictionary<string, object>();
+
+                        if (m_WebApp.AccountConfirmationRequired)
+                        {
+                            //attach pending identifier to first name
+                            first = m_PendingIdentifier + first;
+                            // Store the password temporarily here
+                            urls["Password"] = password;
+                            urls["Avatar"] = avatarType;
+                            if (env.LanguageInfo != null)
+                                urls["Language"] = Localization.LanguageInfoToString(env.LanguageInfo);
+                        }
+
+                        // Create the account
+                        account = new UserAccount(UUID.Zero, first, last, email);
+                        account.ServiceURLs = urls;
+                        account.UserTitle = "Local User";
+
+                        m_UserAccountService.StoreUserAccount(account);
+
+                        string notification = _("Your account has been created.", env);
+                        if (!m_WebApp.AccountConfirmationRequired)
+                        {
+                            // Create the inventory
+                            m_InventoryService.CreateUserInventory(account.PrincipalID);
+
+                            // Store the password
+                            m_AuthenticationService.SetPassword(account.PrincipalID, password);
+
+                            // Set avatar
+                            SetAvatar(env, account.PrincipalID, avatarType);
+                        }
+                        else if (m_WebApp.AdminEmail != string.Empty)
+                        {
+                            string message = string.Format(
+                                _("New account {0} {1} created in {2} is awaiting your approval.",
+                                m_WebApp.AdminLanguage),
+                                first, last, m_WebApp.GridName);
+                            message += "\n\n" + m_WebApp.WebAddress + "/wifi";
+                            SendEMail(
+                                m_WebApp.AdminEmail,
+                                _("Account awaiting approval", m_WebApp.AdminLanguage),
+                                message);
+                            notification = _("Your account awaits administrator approval.", env);
+                        }
+
+                        NotifyWithoutButton(env, notification);
+                        m_log.DebugFormat("[Wifi]: Created account for user {0}", account.Name);
                     }
-
-                    // Create the account
-                    account = new UserAccount(UUID.Zero, first, last, email);
-                    account.ServiceURLs = urls;
-                    account.UserTitle = "Local User";
-
-                    m_UserAccountService.StoreUserAccount(account);
-
-                    string notification = _("Your account has been created.", env);
-                    if (!m_WebApp.AccountConfirmationRequired)
+                    else
                     {
-                        // Create the inventory
-                        m_InventoryService.CreateUserInventory(account.PrincipalID);
-
-                        // Store the password
-                        m_AuthenticationService.SetPassword(account.PrincipalID, password);
-
-                        // Set avatar
-                        SetAvatar(env, account.PrincipalID, avatarType);
+                        m_log.DebugFormat("[Wifi]: Attempt at creating an account that already exists");
+                        env.State = State.NewAccountForm;
+                        env.Data = GetDefaultAvatarSelectionList();
                     }
-                    else if (m_WebApp.AdminEmail != string.Empty)
-                    {
-                        string message = string.Format(
-                            _("New account {0} {1} created in {2} is awaiting your approval.",
-                            m_WebApp.AdminLanguage),
-                            first, last, m_WebApp.GridName);
-                        message += "\n\n" + m_WebApp.WebAddress + "/wifi";
-                        SendEMail(
-                            m_WebApp.AdminEmail,
-                            _("Account awaiting approval", m_WebApp.AdminLanguage),
-                            message);
-                        notification = _("Your account awaits administrator approval.", env);
-                    }
-
-                    NotifyWithoutButton(env, notification);
-                    m_log.DebugFormat("[Wifi]: Created account for user {0}", account.Name);
                 }
                 else
                 {
-                    m_log.DebugFormat("[Wifi]: Attempt at creating an account that already exists");
+                    m_log.DebugFormat("[Wifi]: did not create account because of password and/or user name problems");
                     env.State = State.NewAccountForm;
                     env.Data = GetDefaultAvatarSelectionList();
                 }
             }
             else
             {
-                m_log.DebugFormat("[Wifi]: did not create account because of password and/or user name problems");
+                m_log.DebugFormat("[Wifi]: First and last name must have at least 3 alphanumeric characters");
                 env.State = State.NewAccountForm;
                 env.Data = GetDefaultAvatarSelectionList();
             }

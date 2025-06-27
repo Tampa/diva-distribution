@@ -94,7 +94,7 @@ namespace Diva.Wifi
                 }
 
                 string encpass = OpenSim.Framework.Util.Md5Hash(oldpassword);
-                if ((newpassword != string.Empty) && (newpassword == newpassword2) &&
+                if ((newpassword != string.Empty) && (newpassword == newpassword2) && (newpassword.Length > 11) &&
                     m_AuthenticationService.Authenticate(sinfo.Account.PrincipalID, encpass, 30) != string.Empty)
                 {
                     m_AuthenticationService.SetPassword(sinfo.Account.PrincipalID, newpassword);

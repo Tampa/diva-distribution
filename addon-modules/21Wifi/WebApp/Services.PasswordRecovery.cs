@@ -111,7 +111,7 @@ namespace Diva.Wifi
 
         public string RecoverPasswordPostRequest(Environment env, string email, string token, string newPassword)
         {
-            if (newPassword == null || newPassword.Length < 3)
+            if (newPassword == null || newPassword.Length < 11)
             {
                 env.State = State.RecoveringPassword;
                 return m_WebApp.ReadFile(env, "index.html");
